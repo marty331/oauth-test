@@ -48,6 +48,7 @@ export default App;
 function Home() {
 
   const [token, setToken] = useState(null)
+  const [id_token, setIdToken] = useState(null)
 
   useEffect(() => {
     var q = parseQueryString(window.location.search.substring(1));
@@ -82,6 +83,7 @@ function Home() {
                 document.getElementById("access_token").innerText = body.access_token;
                 localStorage.setItem('token', body.access_token)
                 setToken(body.access_token)
+                setIdToken(body.id_token)
                 document.getElementById("start").classList = "hidden";
                 document.getElementById("token").classList = "";
 
@@ -100,8 +102,8 @@ function Home() {
         localStorage.removeItem("pkce_state");
         localStorage.removeItem("pkce_code_verifier");
     }
-    if (token){
-      const userinfo_endpoint = process.env.REACT_APP_USERINFO_ENDPOINT + "?token=" + token
+    if (id_token){
+      const userinfo_endpoint = process.env.REACT_APP_USERINFO_ENDPOINT + "?token=" + id_token
       const  headers = new Headers();
       headers.append('Accept', 'application/json')
       headers.append('Content-Type', 'application/json')
