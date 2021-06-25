@@ -3,9 +3,7 @@ import {
   BrowserRouter as Router,
   Switch,
   Route,
-  Link,
-  useRouteMatch,
-  useParams
+  Link
 } from "react-router-dom";
 import './App.css';
 
@@ -25,18 +23,14 @@ function App() {
           <li>
             <Link to="/">Home</Link>
           </li>
-          <li>
-            <Link to="/about">About</Link>
-          </li>
+          
         </ul>
 
         <Switch>
-          <Route path="/about">
-            <About />
-          </Route>
           <Route path="/">
             <Home />
           </Route>
+          <Route exact path="/auth/callback" component={() => null} />
         </Switch>
       </div>
     </Router>
@@ -49,9 +43,13 @@ function Home() {
 
   const [token, setToken] = useState(null)
   const [id_token, setIdToken] = useState(null)
+  const [user, setUser] = useState(null)
+  const [email, setEmail] = useState(null)
 
   useEffect(() => {
+    var foundToken = false
     var q = parseQueryString(window.location.search.substring(1));
+    console.log("q ", q)
 
     // Check if the server returned an error string
     if(q.error) {
@@ -64,7 +62,7 @@ function Home() {
     if(q.code) {
 
         // Verify state matches what we set at the beginning
-        if(localStorage.getItem("pkce_state") != q.state) {
+        if(localStorage.getItem("pkce_state") !== q.state) {
             alert("Invalid state");
         } else {
 
@@ -84,6 +82,10 @@ function Home() {
                 localStorage.setItem('token', body.access_token)
                 setToken(body.access_token)
                 setIdToken(body.id_token)
+                localStorage.setItem('id_token', body.id_token)
+                if(body.id_token){
+                  foundToken = true
+                }
                 document.getElementById("start").classList = "hidden";
                 document.getElementById("token").classList = "";
 
@@ -101,55 +103,37 @@ function Home() {
         // Clean these up since we don't need them anymore
         localStorage.removeItem("pkce_state");
         localStorage.removeItem("pkce_code_verifier");
+        
+      }    
+  },[])
+  useEffect(() =>{
+    if(token) {
+      console.log('trying userinfo')
+      const userinfo_endpoint = process.env.REACT_APP_USERINFO_ENDPOINT 
+          const  headers = new Headers();
+          headers.append('Authorization', 'Bearer ' + token)
+          headers.append('Content-Type', 'application/x-www-form-urlencoded')
+          let req = new Request(userinfo_endpoint, {
+            mode: 'cors',
+            method: 'GET',
+            cache: "no-cache",
+            headers: headers,
+          });
+          fetch(req)
+          .then(response => response.json())
+          .then(payload => {
+            console.log("user payload ", payload)
+            setUser(payload.uid)
+            setEmail(payload.mail)
+            document.getElementById("user").classList = "";
+            document.getElementById("user_id").innerText = payload.uid;
+            document.getElementById("email").classList = "";
+            document.getElementById("email_address").innerText = payload.mail;
+          })
+          .catch((error) => {
+            console.log('user info error ', error)
+          })
     }
-    if (id_token){
-      const userinfo_endpoint = process.env.REACT_APP_USERINFO_ENDPOINT + "?token=" + id_token
-      const  headers = new Headers();
-      headers.append('Accept', 'application/json')
-      headers.append('Content-Type', 'application/json')
-      let req = new Request(userinfo_endpoint, {
-        mode: 'cors',
-        method: 'GET',
-        cache: "no-cache",
-        headers: headers,
-      });
-      fetch(req)
-      .then(response => response.body)
-      .then(payload => {
-        console.log("user payload ", payload)
-        const reader = payload.getReader()
-        let charsReceived = 0
-        console.log('reader ', reader)
-        reader.read().then(function processText({ done, value }) {
-          // Result objects contain two properties:
-          // done  - true if the stream has already given you all its data.
-          // value - some data. Always undefined when done is true.
-          if (done) {
-            console.log("Stream complete ", value);
-            // para.textContent = value;
-            return;
-          }
-      
-          // value for fetch streams is a Uint8Array
-          charsReceived += value.length;
-          const chunk = value;
-          // let listItem = document.createElement('li');
-          // listItem.textContent = 'Received ' + charsReceived + ' characters so far. Current chunk = ' + chunk;
-          // list2.appendChild(listItem);
-          console.log('chunk ', chunk)
-          console.log('char len ', charsReceived)
-      
-          // result += chunk;
-      
-          // Read some more, and call this function again
-          return reader.read().then(processText);
-        });
-      })
-      .catch(error => {
-        console.log('user info error ', error)
-      })
-    }
-    
   },[token])
 
   async function  signIn(e){
@@ -185,17 +169,19 @@ function Home() {
 
 // Make a POST request and parse the response as JSON
 function sendPostRequest(url, params, success, error) {
+  
   var request = new XMLHttpRequest();
   request.open('POST', url, true);
   request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
   request.onload = function() {
+      console.log('load now')
       var body = {};
       try {
           body = JSON.parse(request.response);
           
       } catch(e) {}
       console.log('request ', request)
-      if(request.status == 200) {
+      if(request.status === 200) {
           success(request, body);
       } else {
           error(request, body);
@@ -205,12 +191,13 @@ function sendPostRequest(url, params, success, error) {
       error(request, {});
   }
   var body = Object.keys(params).map(key => key + '=' + params[key]).join('&');
+  console.log("send now")
   request.send(body);
 }
 
 // Parse a query string into an object
 function parseQueryString(string) {
-  if(string == "") { return {}; }
+  if(string === "") { return {}; }
   var segments = string.split("&").map(s => s.split("=") );
   var queryString = {};
   segments.forEach(s => queryString[s[0]] = s[1]);
@@ -255,10 +242,18 @@ async function pkceChallengeFromVerifier(v) {
   <h2>Home</h2>
   <div className="flex-center full-height">
     <div className="content">
-        <a href="#" id="start" onClick={signIn}>Click to Sign In</a>
+        <div  id="start" onClick={signIn}>Click to Sign In</div>
         <div id="token" className="hidden">
             <h2>Access Token</h2>
             <div id="access_token" className="code"></div>
+        </div>
+        <div id="user" className="hidden">
+            <h2>User</h2>
+            <div id="user_id" className="code"></div>
+        </div>
+        <div id="email" className="hidden">
+            <h2>Email</h2>
+            <div id="email_address" className="code"></div>
         </div>
         <div id="error" className="hidden">
             <h2>Error</h2>
