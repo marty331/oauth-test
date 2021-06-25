@@ -45,11 +45,23 @@ function Home() {
   const [id_token, setIdToken] = useState(null)
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState(null)
+  const [pkce_state, setPkce] = useState(null)
+  const [expired, setExpired] = useState(false)
 
   useEffect(() => {
     var foundToken = false
     var q = parseQueryString(window.location.search.substring(1));
     console.log("q ", q)
+
+    const getAuth = () => {
+      sendPostRequest(config.token_endpoint, {
+        grant_type: "authorization_code",
+        code: q.code,
+        client_id: config.client_id,
+        redirect_uri: config.redirect_uri,
+        code_verifier: localStorage.getItem("pkce_code_verifier")
+      });
+    }
 
     // Check if the server returned an error string
     if(q.error) {
@@ -63,55 +75,25 @@ function Home() {
 
         // Verify state matches what we set at the beginning
         if(localStorage.getItem("pkce_state") !== q.state) {
-            alert("Invalid state");
+            console.log("Invalid state");
         } else {
-
+          if(localStorage.getItem('access_token') === null){
             // Exchange the authorization code for an access token
-            sendPostRequest(config.token_endpoint, {
-                grant_type: "authorization_code",
-                code: q.code,
-                client_id: config.client_id,
-                redirect_uri: config.redirect_uri,
-                code_verifier: localStorage.getItem("pkce_code_verifier")
-            }, function(request, body) {
-
-                // Initialize your application now that you have an access token.
-                // Here we just display it in the browser.
-                console.log("body ", body)
-                document.getElementById("access_token").innerText = body.access_token;
-                localStorage.setItem('token', body.access_token)
-                setToken(body.access_token)
-                setIdToken(body.id_token)
-                localStorage.setItem('id_token', body.id_token)
-                if(body.id_token){
-                  foundToken = true
-                }
-                document.getElementById("start").classList = "hidden";
-                document.getElementById("token").classList = "";
-
-                // Replace the history entry to remove the auth code from the browser address bar
-                window.history.replaceState({}, null, "/");
-
-            }, function(request, error) {
-                // This could be an error response from the OAuth server, or an error because the 
-                // request failed such as if the OAuth server doesn't allow CORS requests
-                document.getElementById("error_details").innerText = error.error+"\n\n"+error.error_description;
-                document.getElementById("error").classList = "";
-            });
+            getAuth()
+            // Clean these up since we don't need them anymore
+            localStorage.removeItem("pkce_state");
+            localStorage.removeItem("pkce_code_verifier");
+          }
+            
         }
-
-        // Clean these up since we don't need them anymore
-        localStorage.removeItem("pkce_state");
-        localStorage.removeItem("pkce_code_verifier");
-        
       }    
-  },[])
+  },[pkce_state, expired])
   useEffect(() =>{
-    if(token) {
+    if(localStorage.getItem('access_token')) {
       console.log('trying userinfo')
       const userinfo_endpoint = process.env.REACT_APP_USERINFO_ENDPOINT 
           const  headers = new Headers();
-          headers.append('Authorization', 'Bearer ' + token)
+          headers.append('Authorization', 'Bearer ' + localStorage.getItem('access_token'))
           headers.append('Content-Type', 'application/x-www-form-urlencoded')
           let req = new Request(userinfo_endpoint, {
             mode: 'cors',
@@ -132,9 +114,40 @@ function Home() {
           })
           .catch((error) => {
             console.log('user info error ', error)
+            document.getElementById("error_details").innerText = error.error+"\n\n"+error.error_description;
+            document.getElementById("error").classList = "";
+            setExpired(true)
           })
     }
   },[token])
+
+  function authSuccess(body) {
+
+    // Initialize your application now that you have an access token.
+    // Here we just display it in the browser.
+    console.log("body ", body)
+    document.getElementById("access_token").innerText = body.access_token;
+    localStorage.setItem('access_token', body.access_token)
+    localStorage.setItem('refresh_token', body.refresh_token)
+    setToken(body.access_token)
+    setIdToken(body.id_token)
+    localStorage.setItem('id_token', body.id_token)
+    // if(body.id_token){
+    //   foundToken = true
+    // }
+    document.getElementById("start").classList = "hidden";
+    document.getElementById("token").classList = "";
+
+    // Replace the history entry to remove the auth code from the browser address bar
+    window.history.replaceState({}, null, "/");
+
+  }
+  function authFailed(request, error) {
+    // This could be an error response from the OAuth server, or an error because the 
+    // request failed such as if the OAuth server doesn't allow CORS requests
+    document.getElementById("error_details").innerText = error.error+"\n\n"+error.error_description;
+    document.getElementById("error").classList = "";
+  }
 
   async function  signIn(e){
     e.preventDefault();
@@ -142,6 +155,7 @@ function Home() {
     // Create and store a random "state" value
     var state = generateRandomString();
     localStorage.setItem("pkce_state", state);
+    setPkce(state)
 
     // Create and store a new PKCE code_verifier (the plaintext random secret)
     var code_verifier = generateRandomString();
@@ -168,31 +182,27 @@ function Home() {
 // GENERAL HELPER FUNCTIONS
 
 // Make a POST request and parse the response as JSON
-function sendPostRequest(url, params, success, error) {
-  
-  var request = new XMLHttpRequest();
-  request.open('POST', url, true);
-  request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-  request.onload = function() {
-      console.log('load now')
-      var body = {};
-      try {
-          body = JSON.parse(request.response);
-          
-      } catch(e) {}
-      console.log('request ', request)
-      if(request.status === 200) {
-          success(request, body);
-      } else {
-          error(request, body);
-      }
-  }
-  request.onerror = function() {
-      error(request, {});
-  }
+async function sendPostRequest(url, params) {
   var body = Object.keys(params).map(key => key + '=' + params[key]).join('&');
-  console.log("send now")
-  request.send(body);
+  const  headers = new Headers();
+  headers.append('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
+  let req = new Request(url, {
+    mode: 'cors',
+    method: 'POST',
+    headers: headers,
+    body: body,
+  });
+  await fetch(req)
+  .then(response => response.json())
+  .then(payload => {
+    console.log("auth payload ", payload)
+    authSuccess(payload)
+    
+  })
+  .catch((err) => {
+    console.log('auth error ', err)
+    authFailed(err)
+  })  
 }
 
 // Parse a query string into an object
