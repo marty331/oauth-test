@@ -258,11 +258,11 @@ async function pkceChallengeFromVerifier(v) {
             <div id="access_token" className="code"></div>
         </div>
         <div id="user" className="hidden">
-            <h2>User</h2>
+            <h2>User Name</h2>
             <div id="user_id" className="code"></div>
         </div>
         <div id="email" className="hidden">
-            <h2>Email</h2>
+            <h2>Email Address</h2>
             <div id="email_address" className="code"></div>
         </div>
         <div id="error" className="hidden">
